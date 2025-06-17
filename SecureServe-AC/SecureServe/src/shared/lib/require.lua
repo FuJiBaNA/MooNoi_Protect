@@ -4,10 +4,11 @@
 local Require = {
     loaded = {},
     paths = {
-        "./src/shared/",
-        "./src/client/",
-        "./src/server/",
-        "./"
+        "src/shared/",
+        "src/client/",
+        "src/server/",
+        "src/",
+        ""
     }
 }
 
@@ -28,80 +29,120 @@ local function enhanced_error_handler(err, module_name, trace_level)
     
     print(formatted_error)
     
-    return err
+    error(err)
 end
 
 ---@param module_name string The name of the module to require
 ---@return any The exported module content
 function Require.load(module_name)
+    -- ตรวจสอบว่าเคยโหลดแล้วหรือไม่
     if Require.loaded[module_name] then
         return Require.loaded[module_name]
     end
     
-    if module_name:match("^server/") then
-        module_name = "src/" .. module_name
-    elseif module_name:match("^client/") then
-        module_name = "src/" .. module_name
-    elseif module_name:match("^shared/") then
-        module_name = "src/" .. module_name
+    -- เก็บ module_name เดิมไว้
+    local original_module_name = module_name
+    
+    -- แปลง path สำหรับ modules ที่เรียกแบบสั้น
+    if not module_name:match("^src/") then
+        if module_name:match("^server/") then
+            module_name = "src/" .. module_name
+        elseif module_name:match("^client/") then
+            module_name = "src/" .. module_name
+        elseif module_name:match("^shared/") then
+            module_name = "src/" .. module_name
+        end
     end
     
     local module_path = nil
     local code = nil
     
-    for _, path in ipairs(Require.paths) do
-        local full_path = path .. module_name .. ".lua"
-        local success = pcall(function()
-            code = LoadResourceFile(GetCurrentResourceName(), full_path)
+    -- ลองหาไฟล์ในตำแหน่งต่างๆ
+    local search_paths = {
+        module_name .. ".lua",
+        "src/" .. module_name .. ".lua",
+        module_name .. "/init.lua",
+        "src/" .. module_name .. "/init.lua"
+    }
+    
+    -- ถ้าไม่มี src/ prefix ให้เพิ่มเข้าไป
+    if not module_name:match("^src/") then
+        table.insert(search_paths, "src/" .. module_name .. ".lua")
+        table.insert(search_paths, "src/" .. module_name .. "/init.lua")
+    end
+    
+    for _, search_path in ipairs(search_paths) do
+        local success, result = pcall(function()
+            return LoadResourceFile(GetCurrentResourceName(), search_path)
         end)
         
-        if success and code and code ~= "" then
-            module_path = full_path
+        if success and result and result ~= "" then
+            code = result
+            module_path = search_path
             break
         end
-        
-        full_path = path .. module_name .. "/init.lua"
-        success = pcall(function()
-            code = LoadResourceFile(GetCurrentResourceName(), full_path)
-        end)
-        
-        if success and code and code ~= "" then
-            module_path = full_path
-            break
-        end
-        
-        full_path = module_name .. ".lua"
-        success = pcall(function()
-            code = LoadResourceFile(GetCurrentResourceName(), full_path)
-        end)
-        
-        if success and code and code ~= "" then
-            module_path = full_path
-            break
+    end
+    
+    -- ถ้าหาไม่เจอ ลองใช้ path แบบเดิม
+    if not module_path or not code then
+        for _, path in ipairs(Require.paths) do
+            local full_path = path .. original_module_name .. ".lua"
+            local success, result = pcall(function()
+                return LoadResourceFile(GetCurrentResourceName(), full_path)
+            end)
+            
+            if success and result and result ~= "" then
+                code = result
+                module_path = full_path
+                break
+            end
+            
+            -- ลอง init.lua
+            full_path = path .. original_module_name .. "/init.lua"
+            success, result = pcall(function()
+                return LoadResourceFile(GetCurrentResourceName(), full_path)
+            end)
+            
+            if success and result and result ~= "" then
+                code = result
+                module_path = full_path
+                break
+            end
         end
     end
     
     if not module_path or not code then
-        return enhanced_error_handler("Module not found: " .. module_name, module_name)
+        enhanced_error_handler("Module not found: " .. original_module_name .. " (also tried: " .. module_name .. ")", original_module_name)
+        return nil
     end
     
+    -- สร้าง environment สำหรับ module
     local module_env = setmetatable({
         require = function(name) return Require.load(name) end,
+        exports = {},
     }, {__index = _G})
     
-    local module_func, err = load(code, module_path, "bt", module_env)
+    -- โหลดและรัน module
+    local module_func, load_err = load(code, module_path, "bt", module_env)
     if not module_func then
-        return enhanced_error_handler("Error loading module: " .. tostring(err), module_name)
+        enhanced_error_handler("Error loading module: " .. tostring(load_err), original_module_name)
+        return nil
     end
     
     local success, result = pcall(module_func)
     if not success then
-        return enhanced_error_handler("Error executing module: " .. tostring(result), module_name)
+        enhanced_error_handler("Error executing module: " .. tostring(result), original_module_name)
+        return nil
     end
     
+    -- ใช้ result ที่ return มา หรือ exports ที่ตั้งไว้ใน module_env
     local module_exports = result or module_env.exports
     
-    Require.loaded[module_name] = module_exports
+    -- เก็บผลลัพธ์ไว้ในทั้ง original_module_name และ module_name
+    Require.loaded[original_module_name] = module_exports
+    if original_module_name ~= module_name then
+        Require.loaded[module_name] = module_exports
+    end
     
     return module_exports
 end
@@ -111,6 +152,7 @@ function Require.add_path(path)
     table.insert(Require.paths, 1, path)
 end
 
+-- ตั้งค่า global error handler
 _G.SecureServeErrorHandler = function(err)
     local trace = debug.traceback("", 2)
     
@@ -124,8 +166,9 @@ _G.SecureServeErrorHandler = function(err)
     return err
 end
 
+-- แทนที่ฟังก์ชัน require ของ FiveM
 _G.require = function(module_name)
     return Require.load(module_name)
 end
 
-return Require 
+return Require

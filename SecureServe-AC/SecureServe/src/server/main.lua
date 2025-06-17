@@ -18,6 +18,83 @@ local anti_particle_effects = require("server/protections/anti_particle_effects"
 local heartbeat = require("server/protections/heartbeat")
 
 local initialized = false
+-- ฟังก์ชันสำหรับโหลด module อย่างปลอดภัย
+local function safe_require(module_name)
+    local success, result = pcall(require, module_name)
+    if not success then
+        print("^1[ERROR] Failed to load module: " .. module_name .. " - " .. tostring(result) .. "^7")
+        return nil
+    end
+    return result
+end
+
+-- โหลด modules ทีละตัว
+print("^5[INFO] Loading SecureServe server modules...^7")
+
+local config_manager = safe_require("server/core/config_manager")
+local ban_manager = safe_require("server/core/ban_manager")
+local player_manager = safe_require("server/core/player_manager")
+local logger = safe_require("server/core/logger")
+local debug_module = safe_require("server/core/debug_module")
+local auto_config = safe_require("server/core/auto_config")
+local admin_whitelist = safe_require("server/core/admin_whitelist")
+local discord_logger = safe_require("server/core/discord_logger")
+
+-- โหลด protection modules
+local resource_manager = safe_require("server/protections/resource_manager")
+local anti_execution = safe_require("server/protections/anti_execution")
+local anti_entity_spam = safe_require("server/protections/anti_entity_spam")
+local anti_create_entity = safe_require("server/protections/anti_create_entity")
+local anti_resource_injection = safe_require("server/protections/anti_resource_injection")
+local anti_weapon_damage_modifier = safe_require("server/protections/anti_weapon_damage_modifier")
+local anti_explosions = safe_require("server/protections/anti_explosions")
+local anti_particle_effects = safe_require("server/protections/anti_particle_effects")
+local heartbeat = safe_require("server/protections/heartbeat")
+
+local initialized = false
+
+-- ตรวจสอบว่าโหลด modules สำคัญได้หรือไม่
+local required_modules = {
+    config_manager = config_manager,
+    ban_manager = ban_manager,
+    logger = logger
+}
+
+for name, module in pairs(required_modules) do
+    if not module then
+        print("^1[FATAL ERROR] Cannot load required module: " .. name .. "^7")
+        return
+    end
+end
+
+print("^2[SUCCESS] All core modules loaded successfully^7")
+
+local function setupErrorHandler()
+    SecureServeErrorHandler = function(err)
+        if type(err) ~= "string" then
+            err = tostring(err)
+        end
+
+        local formattedError = "^1[ERROR] ^7" .. err
+        print(formattedError)
+
+        if debug_module and debug_module.handle_error then
+            debug_module.handle_error(err, debug.traceback("", 2))
+        end
+    end
+
+    AddEventHandler('onServerResourceStart', function(resource)
+        if resource == GetCurrentResourceName() then
+            local oldError = error
+            error = function(err, level)
+                if SecureServeErrorHandler then
+                    SecureServeErrorHandler(err)
+                end
+                return oldError(err, level or 1)
+            end
+        end
+    end)
+end
 
 local function setupErrorHandler()
     SecureServeErrorHandler = function(err)
