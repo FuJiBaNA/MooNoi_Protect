@@ -83,7 +83,7 @@ SecureServe.ServerSecurity = {
     -- CLIENT MODIFICATION PROTECTION
     ClientProtection = {
         -- Settings to prevent client-side modifications
-        PureLevel = 0,                  -- Block modified client files (2 = max security)
+        PureLevel = 1,                  -- Block modified client files (2 = max security)
                                         -- Set to 1 to allow audio mods and graphics changes
                                         -- Set to 0 to disable (not recommended)
         
@@ -141,7 +141,6 @@ SecureServe.Module = {
 
 		SecurityWhitelist = { -- Resource exceptions allowing entity creation without triggering security measures.
 			{ resource = "bob74_ipl", whitelist = true },
-			{ resource = "6x_houserobbery", whitelist = true },
 		},
 
 		Limits = { -- Defines maximum number of entities each player can spawn before triggering bans.
@@ -153,11 +152,11 @@ SecureServe.Module = {
 	},
 
 	Explosions = {
-		ModuleEnabled = false, -- Activates protection against unauthorized explosion events.
+		ModuleEnabled = true, -- Activates protection against unauthorized explosion events.
 
 		Whitelist = { -- Allows specific resources to legitimately trigger explosion events without penalties.
-			["resource_name_1"] = true,
-			["resource_name_2"] = true,
+			-- ["resource_name_1"] = true,
+			-- ["resource_name_2"] = true,
 		},
 	},
 }
